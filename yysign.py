@@ -1,44 +1,40 @@
-#!/usr/bin/python3  
-# -- coding: utf-8 --
-# @Time : 2023/6/30 10:23
-# -------------------------------
-# cron "0 0 6,8,20 * * *" script-path=xxx.py,tag=匹配cron用
-# const $ = new Env('雨云签到');
-
 import json
 import requests
 import os
+import logging
 
-## 变量雨云账号密码 注册地址https://www.rainyun.com/MzU4NTk=_   登录后积分中心里面 赚钱积分 (如绑定微信 直接就有2000分）就可以用积分兑换主机 需要每天晚上八点蹲点
+# 配置日志
+logging.basicConfig(filename='rainyun_sign.log', level=logging.INFO,
+                    format='%(asctime)s - %(levelname)s - %(message)s')
 
-# yyusername = os.getenv("yyusername")  # line:12
-# yypassword = os.getenv("yypassword")  # line:13
+# 定义API接口URL
+API_BASE_URL = 'https://api.v2.rainyun.com'
+LOGIN_URL = f'{API_BASE_URL}/user/login'
+SIGN_IN_URL = f'{API_BASE_URL}/user/reward/tasks'
 
-def login_sign():
-    session = requests.session()
-    response = session.post(
-        'https://api.v2.rainyun.com/user/login',
-        headers={"Content-Type": "application/json"},
-        data=json.dumps({"field": f"{yyusername}", "password": f"{yypassword}"})
-    )
-    
-    if response.text.find("200") > -1:
-        print("登录成功")
-        csrf_token = response.cookies.get_dict()['X-CSRF-Token']
-    else:
-        print(f"登录失败，响应信息：{response.text}")
-        return  # 退出函数，避免后续代码执行
+def login_and_sign(username, password):
+    session = requests.Session()
+    headers = {'Content-Type': 'application/json'}
+    data = json.dumps({'field': username, 'password': password})
 
-    headers = {'x-csrf-token': csrf_token}
-    reward_response = session.post(
-        'https://api.v2.rainyun.com/user/reward/tasks',
-        headers=headers,
-        data=json.dumps({"task_name": "每日签到", "verifyCode": ""})
-    )
-    print('开始签到：签到结果 ' + reward_response.text)
+    try:
+        response = session.post(LOGIN_URL, headers=headers, data=data)
+        response.raise_for_status()  # 抛出异常，如果响应状态码不是 200
+
+        csrf_token = session.cookies.get_dict()['X-CSRF-Token']
+        headers['x-csrf-token'] = csrf_token
+
+        sign_in_data = json.dumps({'task_name': '每日签到', 'verifyCode': ''})
+        sign_in_response = session.post(SIGN_IN_URL, headers=headers, data=sign_in_data)
+        sign_in_response.raise_for_status()
+
+        logging.info(f"用户 {username} 签到成功：{sign_in_response.text}")
+    except requests.exceptions.RequestException as e:
+        logging.error(f"用户 {username} 签到失败：{e}")
 
 if __name__ == '__main__':
-    for i in range(len(os.getenv("yyusername").split('#'))):
-        yyusername = os.getenv("yyusername").split('#')[i]
-        yypassword = os.getenv("yypassword").split('#')[i]
-        login_sign()
+    yyusernames = os.getenv("yyusername").split('#')
+    yypasswords = os.getenv("yypassword").split('#')
+
+    for username, password in zip(yyusernames, yypasswords):
+        login_and_sign(username, password)
